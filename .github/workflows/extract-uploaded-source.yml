@@ -1,0 +1,57 @@
+name: Extract uploaded source
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ja-staff-document-builder.zip"
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Extract source into repository root
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f ja-staff-document-builder.zip
+          rm -rf .source-extract
+          mkdir .source-extract
+          unzip -q ja-staff-document-builder.zip -d .source-extract
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name '.git' \
+            ! -name '.github' \
+            ! -name '.source-extract' \
+            ! -name 'ja-staff-document-builder.zip' \
+            -exec rm -rf {} +
+
+          cp -a .source-extract/. .
+          rm -rf .source-extract ja-staff-document-builder.zip
+
+      - name: Commit extracted source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No extracted changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Extract JA Staff Document Builder source"
+          git push
