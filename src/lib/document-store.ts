@@ -1,139 +1,21 @@
-import type { SavedDocument, DocumentFolder } from './document-types';
+import type { SavedDocument, DocumentFolder, TemplateCategory } from './document-types';
 import { generateDocRef } from './doc-ref';
+import { documentStorage, type LocalDocument } from './storage';
+import type { BuilderId, BuilderLayoutId } from './builder-framework';
 
-// ── Documents — server API ────────────────────────────────────────────────────
-
-export async function getDocuments(): Promise<SavedDocument[]> {
-  try {
-    const res = await fetch('/api/documents', { credentials: 'include' });
-    if (!res.ok) return [];
-    const data = await res.json() as { success: boolean; documents?: SavedDocument[] };
-    return data.documents ?? [];
-  } catch {
-    return [];
-  }
+function toSaved(doc: LocalDocument): SavedDocument {
+  return { id:doc.id,templateId:doc.templateId,templateName:doc.templateName??doc.templateId,category:(doc.category??'business') as TemplateCategory,title:doc.title,status:doc.status,fields:doc.fields,content:doc.content??'',docRef:doc.docRef,createdAt:doc.createdAt,updatedAt:doc.updatedAt,folderId:doc.folderId,version:doc.version,formData:doc.fields,generatedContent:doc.content??'' };
 }
 
-export async function saveDocument(
-  doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'docRef'>
-): Promise<SavedDocument | null> {
-  try {
-    const docRef = generateDocRef(doc.category);
-    // Support legacy wizard shape (formData/generatedContent) and new shape (fields/content)
-    const fields = doc.fields ?? (doc.formData ? { ...doc.formData, _templateName: doc.templateName } : {});
-    const content = doc.content ?? doc.generatedContent ?? '';
-    const res = await fetch('/api/documents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        templateId: doc.templateId,
-        title: doc.title,
-        category: doc.category,
-        status: doc.status,
-        docRef,
-        fields,
-        content,
-        folderId: doc.folderId,
-      }),
-      credentials: 'include',
-    });
-    const data = await res.json() as { success: boolean; document?: SavedDocument };
-    return data.document ?? null;
-  } catch {
-    return null;
-  }
+export async function getDocuments(): Promise<SavedDocument[]> { return (await documentStorage.listDocuments()).map(toSaved); }
+export async function saveDocument(doc: Omit<SavedDocument,'id'|'createdAt'|'updatedAt'|'version'|'docRef'>): Promise<SavedDocument|null> {
+  const fields=(doc.fields??doc.formData??{}) as Record<string,string>;
+  const saved=await documentStorage.saveDocument({title:doc.title,builderId:(doc.category as BuilderId)||'letter',templateId:doc.templateId,templateName:doc.templateName,category:doc.category,status:doc.status,fields,content:doc.content??doc.generatedContent??'',branding:{color:'#1B4F8A',logoUrl:'',orgName:''},selectedCompany:'JA Group Services Ltd',layoutId:'letter' as BuilderLayoutId,docRef:generateDocRef(doc.category),folderId:doc.folderId});
+  return toSaved(saved);
 }
-
-export async function updateDocument(id: string, updates: Partial<SavedDocument>): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/documents/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-      credentials: 'include',
-    });
-    const data = await res.json() as { success: boolean };
-    return data.success;
-  } catch {
-    return false;
-  }
-}
-
-export async function deleteDocument(id: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/documents/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-    const data = await res.json() as { success: boolean };
-    return data.success;
-  } catch {
-    return false;
-  }
-}
-
-export async function duplicateDocument(id: string): Promise<SavedDocument | null> {
-  try {
-    // Fetch the original
-    const res = await fetch(`/api/documents/${id}`, { credentials: 'include' });
-    if (!res.ok) return null;
-    const data = await res.json() as { success: boolean; document?: SavedDocument };
-    const original = data.document;
-    if (!original) return null;
-
-    // Create a copy
-    return saveDocument({
-      templateId: original.templateId,
-      templateName: original.templateName,
-      title: original.title + ' (Copy)',
-      category: original.category,
-      status: 'draft',
-      fields: original.fields,
-      content: original.content,
-      folderId: original.folderId,
-    });
-  } catch {
-    return null;
-  }
-}
-
-// ── Folders — server API ──────────────────────────────────────────────────────
-
-export async function getFolders(): Promise<DocumentFolder[]> {
-  try {
-    const res = await fetch('/api/folders', { credentials: 'include' });
-    if (!res.ok) return [];
-    const data = await res.json() as { success: boolean; folders?: DocumentFolder[] };
-    return data.folders ?? [];
-  } catch {
-    return [];
-  }
-}
-
-export async function createFolder(name: string, color: string): Promise<DocumentFolder | null> {
-  try {
-    const res = await fetch('/api/folders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, color }),
-      credentials: 'include',
-    });
-    const data = await res.json() as { success: boolean; folder?: DocumentFolder };
-    return data.folder ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export async function deleteFolder(id: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/folders/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-    const data = await res.json() as { success: boolean };
-    return data.success;
-  } catch {
-    return false;
-  }
-}
+export async function updateDocument(id:string,updates:Partial<SavedDocument>):Promise<boolean>{ const current=await documentStorage.getDocument(id); if(!current)return false; await documentStorage.saveDocument({...current,...updates,id,fields:(updates.fields??current.fields) as Record<string,string>,status:updates.status??current.status}); return true; }
+export async function deleteDocument(id:string):Promise<boolean>{ await documentStorage.deleteDocument(id); return true; }
+export async function duplicateDocument(id:string):Promise<SavedDocument|null>{ const current=await documentStorage.getDocument(id); if(!current)return null; const {id:_id,createdAt:_created,updatedAt:_updated,version:_version,...copy}=current; void _id;void _created;void _updated;void _version; return toSaved(await documentStorage.saveDocument({...copy,title:`${current.title} (Copy)`,docRef:generateDocRef(current.category ?? 'business')})); }
+export async function getFolders():Promise<DocumentFolder[]>{ return documentStorage.listFolders(); }
+export async function createFolder(name:string,color:string):Promise<DocumentFolder|null>{ return documentStorage.saveFolder({name,color}); }
+export async function deleteFolder(id:string):Promise<boolean>{ await documentStorage.deleteFolder(id); return true; }
