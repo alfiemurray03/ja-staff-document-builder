@@ -277,15 +277,15 @@ function SidebarContent({ sections, pathname, onNavigate, user, onLogout }: Side
         <Link
           to="/dashboard"
           className="flex items-center gap-2.5"
-            aria-label="JA Staff Document Builder — dashboard"
+            aria-label="JA Staff Portal — home"
           onClick={onNavigate}
         >
           <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center shrink-0" aria-hidden="true">
             <FileText className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <div className="font-bold text-sm text-foreground leading-tight">JA Staff Document Builder</div>
-            <div className="text-[10px] text-muted-foreground leading-tight">Internal document platform</div>
+            <div className="font-bold text-sm text-foreground leading-tight">JA Staff Portal</div>
+            <div className="text-[10px] text-muted-foreground leading-tight">Internal company workspace</div>
           </div>
         </Link>
       </div>

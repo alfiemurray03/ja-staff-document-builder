@@ -25,7 +25,7 @@ export interface SiteSettings {
 }
 
 const DEFAULTS: SiteSettings = {
-  siteName:    'JA Document Hub',
+  siteName:    'JA Staff Portal',
   brandName:   'JA Group Services',
   companyName: 'JA Group Services Ltd',
   tagline:     'Professional Documents, Generated in Minutes',
