@@ -2,8 +2,7 @@
  * GenericBuilder — Shared builder UI used by Contract, Policy, Form,
  * Report, Minutes, Proposal, Checklist, Letter, and Invoice builders.
  *
- * Templates are loaded from the DB via GET /api/builders/templates.
- * The `templates` prop is no longer used and has been removed.
+ * Templates and documents are browser-local in development storage mode.
  */
 import { useState, useEffect } from 'react';
 import { Helmet } from '@dr.pogodin/react-helmet';
@@ -31,12 +30,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { BuilderTemplate, BuilderDocument, BuilderId, BuilderLayoutId } from '@/lib/builder-framework';
+import type { BuilderTemplate, BuilderId, BuilderLayoutId } from '@/lib/builder-framework';
 import { todayISO, BUILDER_LAYOUTS, BUILDER_DEFAULT_LAYOUT } from '@/lib/builder-framework';
 import { Layout } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { canAccessBuilderTemplate, canSaveDrafts, type PlanId } from '@/lib/plan-config';
 import type { BuilderIndustry } from '@/lib/builder-framework';
+import { getTemplatesForBuilder } from '@/lib/builders/template-registry';
+import { documentStorage } from '@/lib/storage';
 export interface BrandingState {
   color: string;
   logoUrl: string;
@@ -48,7 +49,6 @@ interface GenericBuilderProps {
   title: string;
   subtitle: string;
   metaDescription: string;
-  /** @deprecated Templates are now loaded from the DB. This prop is ignored. */
   templates?: BuilderTemplate[];
   defaultAccentColor?: string;
   renderPreview: (
@@ -102,33 +102,13 @@ export default function GenericBuilder({
     }
   }, [user, navigate]);
 
-  // ── Load templates from DB ────────────────────────────────────────────────
-  const [dbTemplates, setDbTemplates] = useState<BuilderTemplate[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(true);
-  const [templatesError, setTemplatesError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setTemplatesLoading(true);
-    setTemplatesError(null);
-    fetch(`/api/builders/templates?builderId=${builderId}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((d: { success: boolean; templates: BuilderTemplate[] }) => {
-        if (d.success) setDbTemplates(d.templates);
-        else setTemplatesError('Failed to load templates.');
-      })
-      .catch(() => setTemplatesError('Could not load templates. Please refresh.'))
-      .finally(() => setTemplatesLoading(false));
-  }, [builderId]);
-
-  // Active templates — filter out retired
-  const templates = dbTemplates.filter(t => t.status !== 'retired');
+  const templates = getTemplatesForBuilder(builderId);
+  const templatesLoading = false;
+  const templatesError: string | null = null;
 
   // Load saved docs list
   useEffect(() => {
-    fetch(`/api/builder-docs?builderId=${builderId}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.docs) setSavedDocs(d.docs); })
-      .catch(() => {});
+    documentStorage.listDocuments(builderId).then(docs => setSavedDocs(docs.map(({id,title,updatedAt})=>({id,title,updatedAt}))));
   }, [builderId]);
 
   function selectTemplate(t: BuilderTemplate) {
@@ -163,45 +143,25 @@ export default function GenericBuilder({
         templateId: selectedTemplate.id,
         title: docTitle || selectedTemplate.name,
         fields,
-        brandColor: branding.color,
-        logoUrl: branding.logoUrl,
+        branding,
+        selectedCompany: user.company,
         layoutId: selectedLayout,
         status: 'draft',
       };
 
-      let res: Response;
-      if (currentDocId) {
-        // Update existing doc — no new row created
-        res = await fetch(`/api/builder-docs/${currentDocId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(body),
-        });
-      } else {
-        // First save — create new doc
-        res = await fetch('/api/builder-docs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(body),
-        });
-      }
-
-      if (res.ok) {
-        setSaved(true);
-        const d = await res.json() as { doc?: { id: string; title: string; updatedAt: string } };
-        if (d.doc) {
-          setCurrentDocId(d.doc.id); // remember the ID for future saves
-          setSavedDocs(prev => [d.doc!, ...prev.filter(x => x.id !== d.doc!.id)]);
-        }
-      } else {
-        // Fallback: persist to localStorage so work isn't lost
-        localStorage.setItem(`ja_builder_${builderId}_draft`, JSON.stringify(body));
-        setSaved(true);
-      }
-    } catch {
-      setSaved(true);
+      const doc = await documentStorage.saveDocument({
+        id: currentDocId ?? undefined, builderId, templateId: body.templateId,
+        templateName: selectedTemplate.name, category: selectedTemplate.category,
+        title: body.title, fields, content: '', branding,
+        selectedCompany: body.selectedCompany, layoutId: selectedLayout,
+        status: 'draft', docRef: currentDocId ? (await documentStorage.getDocument(currentDocId))?.docRef ?? crypto.randomUUID().slice(0,8).toUpperCase() : crypto.randomUUID().slice(0,8).toUpperCase(),
+        folderId: null,
+      });
+      setSaved(true); setCurrentDocId(doc.id);
+      setSavedDocs(prev => [{id:doc.id,title:doc.title,updatedAt:doc.updatedAt},...prev.filter(x=>x.id!==doc.id)]);
+    } catch (error) {
+      console.error('Local document save failed', error);
+      setPlanError('The document could not be saved in this browser. Check browser storage permissions.');
     } finally {
       setSaving(false);
     }
@@ -212,24 +172,22 @@ export default function GenericBuilder({
 
   async function loadDoc(id: string) {
     try {
-      const res = await fetch(`/api/builder-docs/${id}`, { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json() as { doc?: BuilderDocument };
-        if (d.doc) {
-          const t = templates.find(t => t.id === d.doc!.templateId);
+      const doc = await documentStorage.getDocument(id);
+      if (doc) {
+          const t = templates.find(t => t.id === doc.templateId);
           if (t) {
             setSelectedTemplate(t);
-            setFields(d.doc!.fields);
-            setBranding(prev => ({ ...prev, color: d.doc!.brandColor ?? defaultAccentColor, logoUrl: d.doc!.logoUrl ?? '' }));
-            setDocTitle(d.doc!.title);
+            setFields(doc.fields);
+            setBranding(doc.branding);
+            setDocTitle(doc.title);
             setCurrentDocId(id); // track so subsequent saves use PUT
-            if (d.doc!.layoutId) setSelectedLayout(d.doc!.layoutId);
+            if (doc.layoutId) setSelectedLayout(doc.layoutId);
             setSaved(true);
             setShowSaved(false);
             setActiveTab('fields');
           }
+          await documentStorage.addAudit(id,'opened');
         }
-      }
     } catch { /* ignore */ }
   }
 
@@ -266,6 +224,7 @@ export default function GenericBuilder({
     const html = getExportHTML();
     if (!html) return;
     const win = window.open('', '_blank');
+    if (currentDocId) void documentStorage.addAudit(currentDocId,'printed');
     if (!win) return;
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${docTitle}</title>
       <style>${PRINT_STYLES}</style></head><body>${html}</body></html>`);
@@ -283,6 +242,7 @@ export default function GenericBuilder({
     const html = getExportHTML();
     if (!html) return;
     const win = window.open('', '_blank');
+    if (currentDocId) void documentStorage.addAudit(currentDocId,'exported','PDF');
     if (!win) return;
     const filename = docTitle.replace(/[^a-z0-9]/gi, '-').toLowerCase() || 'document';
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filename}</title>
@@ -309,6 +269,7 @@ export default function GenericBuilder({
       <style>${PRINT_STYLES}</style>
       </head><body>${html}</body></html>`;
     const blob = new Blob([fullHtml], { type: 'text/html' });
+    if (currentDocId) void documentStorage.addAudit(currentDocId,'exported','HTML');
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

@@ -1,5 +1,5 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useMemo, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Helmet } from '@dr.pogodin/react-helmet';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/lib/auth-context';
@@ -54,58 +54,14 @@ const PLAN_LIMITS: Record<string, number> = {
 };
 
 export default function DashboardPage() {
-  const { user, refreshUser } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
   const { siteName } = useSiteSettings();
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [favourites, setFavourites] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [checkoutBanner, setCheckoutBanner] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Handle return from Stripe checkout
   useEffect(() => {
-    const checkoutStatus = searchParams.get('checkout');
-    const checkoutPlan   = searchParams.get('plan');
-
-    if (checkoutStatus === 'success' || checkoutStatus === 'pending') {
-      // Remove query params from URL immediately
-      setSearchParams({}, { replace: true });
-
-      // Show banner
-      const planLabel = checkoutPlan
-        ? checkoutPlan.charAt(0).toUpperCase() + checkoutPlan.slice(1)
-        : 'your new';
-      setCheckoutBanner(`Welcome to the ${planLabel} plan! Your account is being activated…`);
-
-      // Poll /api/auth/me until the plan updates (webhook may take a few seconds)
-      let attempts = 0;
-      pollRef.current = setInterval(() => {
-        attempts++;
-        refreshUser();
-        if (attempts >= 10) {
-          // Stop after 10 attempts (~20s)
-          if (pollRef.current) clearInterval(pollRef.current);
-          setCheckoutBanner(prev =>
-            prev ? `Your ${planLabel} plan is now active. Welcome aboard!` : null
-          );
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    void Promise.all([
-      getDocuments(),
-      fetch('/api/favourites', { credentials: 'include' }).then(r => r.json() as Promise<{ favourites?: string[] }>),
-    ]).then(([docs, favData]) => {
+    void getDocuments().then((docs) => {
       setDocuments(docs);
-      setFavourites(favData.favourites ?? []);
       setLoading(false);
     });
   }, []);
@@ -127,14 +83,6 @@ export default function DashboardPage() {
 
   // (favourites/recently-used template tracking removed — builders hub replaces template library)
 
-  // Stop polling once the plan has updated in the auth context
-  useEffect(() => {
-    if (checkoutBanner && user?.plan && user.plan !== 'free') {
-      if (pollRef.current) clearInterval(pollRef.current);
-      setCheckoutBanner(`Your ${user.plan.charAt(0).toUpperCase() + user.plan.slice(1)} plan is now active. Welcome aboard!`);
-    }
-  }, [user?.plan, checkoutBanner]);
-
   return (
     <>
       <Helmet>
@@ -143,19 +91,6 @@ export default function DashboardPage() {
       </Helmet>
       <DashboardLayout>
         <div className="p-6 max-w-7xl mx-auto space-y-6">
-
-          {/* Checkout success banner */}
-          {checkoutBanner && (
-            <div className="flex items-center gap-3 bg-green-50 border border-green-300 rounded-xl px-5 py-4">
-              <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-              <p className="text-sm font-semibold text-green-800 flex-1">{checkoutBanner}</p>
-              <button
-                onClick={() => setCheckoutBanner(null)}
-                className="text-green-600 hover:text-green-800 text-lg leading-none"
-                aria-label="Dismiss"
-              >×</button>
-            </div>
-          )}
 
           {/* Welcome */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

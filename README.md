@@ -6,6 +6,12 @@ JA Staff Document Builder is an internal document-production application for JA 
 
 The temporary browser-local staff profile is only a development convenience. It does not identify or verify anybody and is not a security control. Workforce authentication and role-based access control must be reintroduced before production deployment.
 
+## Browser-local storage
+
+With `VITE_STORAGE_MODE=local` (the default), bundled builder templates load directly from the source catalogue and documents, folders, statuses, references, template overrides and the local audit trail are stored in IndexedDB. No Express server, MySQL database or authentication endpoint is required by the active builders, dashboard, Documents page or Staff Account page. This data is device-and-browser-specific, is not shared, and the audit trail is not tamper-resistant.
+
+Use **Staff Account > Local backup and restore** to download or import the validated JSON backup. Clearing browser site data can permanently delete locally stored documents.
+
 ## Preserved functionality
 
 The letter, email, policy, form, invoice, checklist, report, minutes, proposal and contract builders remain, together with the template catalogue, guided fields, rich-text editing, live preview, drafts, saved and completed documents, folders, references, printing, export, document signing, branding, layout controls, template administration and audit records.
