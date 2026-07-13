@@ -11,6 +11,7 @@ const AuthCallbackPage = lazy(() => import('./pages/auth-callback'));
 const AuthLogoutPage   = lazy(() => import('./pages/auth-logout'));
 const AuthOidcStartPage = lazy(() => import('./pages/auth-oidc-start'));
 const DashboardPage = lazy(() => import('./pages/dashboard'));
+const StaffPortalPage = lazy(() => import('./pages/staff-portal'));
 const DocumentsPage = lazy(() => import('./pages/documents'));
 const DocumentAuditPage = lazy(() => import('./pages/documents/audit'));
 const BuildersHubPage = lazy(() => import('./pages/builders-hub'));
@@ -186,8 +187,11 @@ export const routes: RouteObject[] = [
   // ── Customer-facing routes ──────────────────────────────────────────
   {
     path: '/',
-    element: <Navigate to="/dashboard" replace />,
+    element: wrap(<StaffPortalPage />),
   },
+  ...['/work','/tasks','/calendar','/board','/board/meetings','/board/actions','/governance','/governance/directors','/governance/shareholders','/governance/deadlines','/portals','/resources','/staff','/search'].map(path => ({ path, element: wrap(<StaffPortalPage />) })),
+  { path: '/board/meetings/:id', element: wrap(<StaffPortalPage />) },
+  { path: '/document-studio', element: <Navigate to="/builders" replace /> },
   // OIDC start — server intercepts this in production; React page is a
   // client-side fallback that fires the hard redirect immediately.
   {
@@ -205,7 +209,7 @@ export const routes: RouteObject[] = [
   },
   {
     path: '/dashboard',
-    element: wrap(<RequireAuth><DashboardPage /></RequireAuth>),
+    element: <Navigate to="/" replace />,
   },
   {
     path: '/documents',

@@ -1,8 +1,8 @@
-# JA Staff Document Builder
+# JA Staff Portal
 
 > **WARNING: This development build does not contain authentication or access control. Do not expose it to the public internet or use it to store sensitive, personal, safeguarding, financial or confidential information until authentication and authorisation have been reimplemented.**
 
-JA Staff Document Builder is an internal document-production application for JA Group Services Ltd and JSDS Group Ltd. It opens directly into the staff dashboard and provides unlimited internal use: there are no plans, credits, tokens, subscriptions or document quotas.
+JA Staff Portal is the internal workspace for managing the everyday operations, documents, governance and board activities of JA Group Services Ltd. Its Document Studio preserves the complete document-production capability for JA Group Services Ltd and JSDS Group Ltd.
 
 The temporary browser-local staff profile is only a development convenience. It does not identify or verify anybody and is not a security control. Workforce authentication and role-based access control must be reintroduced before production deployment.
 
